@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lacerodoce - Control de Aportes y Gastos</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* Modal de configuracion */
+        .config-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .config-overlay.hidden { display: none; }
+
+        .config-modal {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+
+        .config-modal h2 {
+            margin-bottom: 0.5rem;
+            color: #1a237e;
+        }
+
+        .config-modal p {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .config-modal .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .config-modal .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            color: #555;
+            text-transform: uppercase;
+        }
+
+        .config-modal input {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: monospace;
+        }
+
+        .config-modal input:focus {
+            outline: none;
+            border-color: #1a237e;
+        }
+
+        .config-modal .btn {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+
+        .config-btn {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: #1a237e;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+
+        .config-btn:hover { opacity: 0.9; }
+
+        /* Notificaciones */
+        .toast {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.8rem 1.2rem;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s;
+            max-width: 350px;
+        }
+
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #2e7d32; }
+        .toast.error { background: #c62828; }
+
+        header {
+            background: linear-gradient(135deg, #1a237e, #283593);
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.3rem;
+        }
+
+        header p {
+            font-size: 0.95rem;
+            opacity: 0.85;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            padding: 1.5rem;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.2rem;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        .summary-card h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .summary-card .amount {
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+
+        .card-aportes h3 { color: #2e7d32; }
+        .card-aportes .amount { color: #2e7d32; }
+        .card-gastos h3 { color: #c62828; }
+        .card-gastos .amount { color: #c62828; }
+        .card-saldo h3 { color: #1565c0; }
+        .card-saldo .amount { color: #1565c0; }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 1.5rem 2rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 0.8rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+            color: #555;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+        }
+
+        .tab-btn.active {
+            color: white;
+        }
+
+        .tab-btn.tab-aportes.active {
+            background: #2e7d32;
+        }
+
+        .tab-btn.tab-gastos.active {
+            background: #c62828;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .form-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        .form-card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            padding: 0.6rem 0.8rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #1a237e;
+        }
+
+        .btn {
+            padding: 0.7rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            color: white;
+        }
+
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-aporte { background: #2e7d32; }
+        .btn-gasto { background: #c62828; }
+        .btn-config { background: #1a237e; }
+        .btn-delete {
+            background: none;
+            color: #999;
+            padding: 0.3rem 0.5rem;
+            font-size: 1.1rem;
+        }
+        .btn-delete:hover { color: #c62828; }
+
+        .table-wrapper {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .table-wrapper h2 {
+            font-size: 1.1rem;
+            padding: 1.2rem 1.5rem 0.8rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            background: #fafafa;
+            padding: 0.7rem 1rem;
+            text-align: left;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #777;
+            border-bottom: 1px solid #eee;
+        }
+
+        tbody td {
+            padding: 0.7rem 1rem;
+            border-bottom: 1px solid #f5f5f5;
+            font-size: 0.9rem;
+        }
+
+        tbody tr:hover {
+            background: #fafafa;
+        }
+
+        .empty-msg {
+            text-align: center;
+            padding: 2rem;
+            color: #aaa;
+            font-size: 0.95rem;
+        }
+
+        .amount-positive { color: #2e7d32; font-weight: 600; }
+        .amount-negative { color: #c62828; font-weight: 600; }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #999;
+        }
+
+        @media (max-width: 600px) {
+            header h1 { font-size: 1.4rem; }
+            .form-row { grid-template-columns: 1fr; }
+            .summary { grid-template-columns: 1fr; padding: 1rem; }
+            .container { padding: 0 1rem 2rem; }
+            table { font-size: 0.85rem; }
+            thead th, tbody td { padding: 0.5rem 0.6rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Modal de configuracion Supabase -->
+    <div class="config-overlay hidden" id="configOverlay">
+        <div class="config-modal">
+            <h2>Configurar Supabase</h2>
+            <p>Ingresa las credenciales de tu proyecto Supabase. Las encuentras en Settings &gt; API de tu proyecto.</p>
+            <div class="form-group">
+                <label>Supabase URL</label>
+                <input type="text" id="config-url" placeholder="https://xxxxx.supabase.co">
+            </div>
+            <div class="form-group">
+                <label>Anon Key (public)</label>
+                <input type="text" id="config-key" placeholder="eyJhbGciOiJIUzI1NiIs...">
+            </div>
+            <button class="btn btn-config" onclick="saveConfig()">Conectar</button>
+        </div>
+    </div>
+
+    <!-- Toast de notificacion -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Boton config -->
+    <button class="config-btn" onclick="showConfig()" title="Configurar Supabase">&#9881;</button>
+
+    <header>
+        <h1>Exalumnos Lacerodoce</h1>
+        <p>Control de Aportes y Gastos</p>
+    </header>
+
+    <div class="summary">
+        <div class="summary-card card-aportes">
+            <h3>Total Aportes</h3>
+            <div class="amount" id="totalAportes">$0.00</div>
+        </div>
+        <div class="summary-card card-gastos">
+            <h3>Total Gastos</h3>
+            <div class="amount" id="totalGastos">$0.00</div>
+        </div>
+        <div class="summary-card card-saldo">
+            <h3>Saldo Disponible</h3>
+            <div class="amount" id="saldo">$0.00</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="tabs">
+            <button class="tab-btn tab-aportes active" onclick="switchTab('aportes')">Aportes</button>
+            <button class="tab-btn tab-gastos" onclick="switchTab('gastos')">Gastos</button>
+        </div>
+
+        <!-- Seccion Aportes -->
+        <div id="section-aportes" class="section active">
+            <div class="form-card">
+                <h2>Registrar Aporte</h2>
+                <form id="formAporte" onsubmit="addAporte(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="aporte-nombre">Nombre</label>
+                            <input type="text" id="aporte-nombre" required placeholder="Nombre del aportante">
+                        </div>
+                        <div class="form-group">
+                            <label for="aporte-monto">Monto ($)</label>
+                            <input type="number" id="aporte-monto" required min="0.01" step="0.01" placeholder="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="aporte-fecha">Fecha</label>
+                            <input type="date" id="aporte-fecha" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-aporte" id="btnAporte">Registrar Aporte</button>
+                </form>
+            </div>
+
+            <div class="table-wrapper">
+                <h2>Historial de Aportes</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Nombre</th>
+                            <th>Monto</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaAportes">
+                    </tbody>
+                </table>
+                <div class="empty-msg" id="emptyAportes">No hay aportes registrados</div>
+            </div>
+        </div>
+
+        <!-- Seccion Gastos -->
+        <div id="section-gastos" class="section">
+            <div class="form-card">
+                <h2>Registrar Gasto</h2>
+                <form id="formGasto" onsubmit="addGasto(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="gasto-fecha">Fecha</label>
+                            <input type="date" id="gasto-fecha" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="gasto-monto">Monto ($)</label>
+                            <input type="number" id="gasto-monto" required min="0.01" step="0.01" placeholder="0.00">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.8rem;">
+                        <label for="gasto-descripcion">Descripcion</label>
+                        <input type="text" id="gasto-descripcion" required placeholder="Descripcion del gasto">
+                    </div>
+                    <button type="submit" class="btn btn-gasto" id="btnGasto">Registrar Gasto</button>
+                </form>
+            </div>
+
+            <div class="table-wrapper">
+                <h2>Historial de Gastos</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Descripcion</th>
+                            <th>Monto</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaGastos">
+                    </tbody>
+                </table>
+                <div class="empty-msg" id="emptyGastos">No hay gastos registrados</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let supabase = null;
+
+        // Toast de notificacion
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        }
+
+        // Configuracion de Supabase
+        function getConfig() {
+            const url = localStorage.getItem('supabase_url');
+            const key = localStorage.getItem('supabase_key');
+            return (url && key) ? { url, key } : null;
+        }
+
+        function showConfig() {
+            const config = getConfig();
+            if (config) {
+                document.getElementById('config-url').value = config.url;
+                document.getElementById('config-key').value = config.key;
+            }
+            document.getElementById('configOverlay').classList.remove('hidden');
+        }
+
+        function saveConfig() {
+            const url = document.getElementById('config-url').value.trim();
+            const key = document.getElementById('config-key').value.trim();
+
+            if (!url || !key) {
+                showToast('Completa ambos campos', 'error');
+                return;
+            }
+
+            localStorage.setItem('supabase_url', url);
+            localStorage.setItem('supabase_key', key);
+            document.getElementById('configOverlay').classList.add('hidden');
+            initSupabase();
+        }
+
+        function initSupabase() {
+            const config = getConfig();
+            if (!config) {
+                showConfig();
+                return;
+            }
+
+            supabase = window.supabase.createClient(config.url, config.key);
+            loadData();
+        }
+
+        // Formatear moneda
+        function formatMoney(amount) {
+            return '$' + parseFloat(amount).toFixed(2);
+        }
+
+        // Formatear fecha para mostrar
+        function formatDate(dateStr) {
+            const parts = dateStr.split('-');
+            return parts[2] + '/' + parts[1] + '/' + parts[0];
+        }
+
+        // Establecer fecha actual por defecto
+        function setDefaultDates() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('aporte-fecha').value = today;
+            document.getElementById('gasto-fecha').value = today;
+        }
+
+        // Cambiar entre tabs
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+
+            document.querySelector('.tab-' + tab).classList.add('active');
+            document.getElementById('section-' + tab).classList.add('active');
+        }
+
+        // Cargar datos desde Supabase
+        async function loadData() {
+            if (!supabase) return;
+
+            try {
+                const [aportesRes, gastosRes] = await Promise.all([
+                    supabase.from('aportes').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }),
+                    supabase.from('gastos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
+                ]);
+
+                if (aportesRes.error) throw aportesRes.error;
+                if (gastosRes.error) throw gastosRes.error;
+
+                render(aportesRes.data, gastosRes.data);
+            } catch (err) {
+                showToast('Error al cargar datos: ' + err.message, 'error');
+            }
+        }
+
+        // Agregar aporte
+        async function addAporte(e) {
+            e.preventDefault();
+            if (!supabase) { showConfig(); return; }
+
+            const btn = document.getElementById('btnAporte');
+            btn.disabled = true;
+
+            try {
+                const { error } = await supabase.from('aportes').insert({
+                    nombre: document.getElementById('aporte-nombre').value.trim(),
+                    monto: parseFloat(document.getElementById('aporte-monto').value),
+                    fecha: document.getElementById('aporte-fecha').value
+                });
+
+                if (error) throw error;
+
+                document.getElementById('formAporte').reset();
+                setDefaultDates();
+                showToast('Aporte registrado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Agregar gasto
+        async function addGasto(e) {
+            e.preventDefault();
+            if (!supabase) { showConfig(); return; }
+
+            const btn = document.getElementById('btnGasto');
+            btn.disabled = true;
+
+            try {
+                const { error } = await supabase.from('gastos').insert({
+                    fecha: document.getElementById('gasto-fecha').value,
+                    monto: parseFloat(document.getElementById('gasto-monto').value),
+                    descripcion: document.getElementById('gasto-descripcion').value.trim()
+                });
+
+                if (error) throw error;
+
+                document.getElementById('formGasto').reset();
+                setDefaultDates();
+                showToast('Gasto registrado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Eliminar aporte
+        async function deleteAporte(id) {
+            if (!supabase) return;
+
+            try {
+                const { error } = await supabase.from('aportes').delete().eq('id', id);
+                if (error) throw error;
+                showToast('Aporte eliminado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
+        }
+
+        // Eliminar gasto
+        async function deleteGasto(id) {
+            if (!supabase) return;
+
+            try {
+                const { error } = await supabase.from('gastos').delete().eq('id', id);
+                if (error) throw error;
+                showToast('Gasto eliminado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
+        }
+
+        // Renderizar la UI
+        function render(aportes, gastos) {
+            aportes = aportes || [];
+            gastos = gastos || [];
+
+            // Totales
+            const totalAportes = aportes.reduce((sum, a) => sum + parseFloat(a.monto), 0);
+            const totalGastos = gastos.reduce((sum, g) => sum + parseFloat(g.monto), 0);
+            const saldo = totalAportes - totalGastos;
+
+            document.getElementById('totalAportes').textContent = formatMoney(totalAportes);
+            document.getElementById('totalGastos').textContent = formatMoney(totalGastos);
+            document.getElementById('saldo').textContent = formatMoney(saldo);
+
+            // Tabla aportes
+            const tablaAportes = document.getElementById('tablaAportes');
+            const emptyAportes = document.getElementById('emptyAportes');
+            if (aportes.length === 0) {
+                tablaAportes.innerHTML = '';
+                emptyAportes.style.display = 'block';
+            } else {
+                emptyAportes.style.display = 'none';
+                tablaAportes.innerHTML = aportes.map(a =>
+                    '<tr>' +
+                        '<td>' + formatDate(a.fecha) + '</td>' +
+                        '<td>' + escapeHtml(a.nombre) + '</td>' +
+                        '<td class="amount-positive">' + formatMoney(a.monto) + '</td>' +
+                        '<td><button class="btn btn-delete" onclick="deleteAporte(' + a.id + ')" title="Eliminar">&times;</button></td>' +
+                    '</tr>'
+                ).join('');
+            }
+
+            // Tabla gastos
+            const tablaGastos = document.getElementById('tablaGastos');
+            const emptyGastos = document.getElementById('emptyGastos');
+            if (gastos.length === 0) {
+                tablaGastos.innerHTML = '';
+                emptyGastos.style.display = 'block';
+            } else {
+                emptyGastos.style.display = 'none';
+                tablaGastos.innerHTML = gastos.map(g =>
+                    '<tr>' +
+                        '<td>' + formatDate(g.fecha) + '</td>' +
+                        '<td>' + escapeHtml(g.descripcion) + '</td>' +
+                        '<td class="amount-negative">' + formatMoney(g.monto) + '</td>' +
+                        '<td><button class="btn btn-delete" onclick="deleteGasto(' + g.id + ')" title="Eliminar">&times;</button></td>' +
+                    '</tr>'
+                ).join('');
+            }
+        }
+
+        // Escapar HTML para prevenir XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Inicializar
+        setDefaultDates();
+        initSupabase();
+    </script>
+</body>
+</html>
