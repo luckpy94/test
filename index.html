@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lacerodoce - Control de Aportes y Gastos</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
             margin: 0;
@@ -17,6 +18,109 @@
             color: #333;
             min-height: 100vh;
         }
+
+        /* Modal de configuracion */
+        .config-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .config-overlay.hidden { display: none; }
+
+        .config-modal {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+
+        .config-modal h2 {
+            margin-bottom: 0.5rem;
+            color: #1a237e;
+        }
+
+        .config-modal p {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .config-modal .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .config-modal .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            color: #555;
+            text-transform: uppercase;
+        }
+
+        .config-modal input {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: monospace;
+        }
+
+        .config-modal input:focus {
+            outline: none;
+            border-color: #1a237e;
+        }
+
+        .config-modal .btn {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+
+        .config-btn {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: #1a237e;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+
+        .config-btn:hover { opacity: 0.9; }
+
+        /* Notificaciones */
+        .toast {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.8rem 1.2rem;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s;
+            max-width: 350px;
+        }
+
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #2e7d32; }
+        .toast.error { background: #c62828; }
 
         header {
             background: linear-gradient(135deg, #1a237e, #283593);
@@ -182,9 +286,11 @@
         }
 
         .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .btn-aporte { background: #2e7d32; }
         .btn-gasto { background: #c62828; }
+        .btn-config { background: #1a237e; }
         .btn-delete {
             background: none;
             color: #999;
@@ -242,6 +348,12 @@
         .amount-positive { color: #2e7d32; font-weight: 600; }
         .amount-negative { color: #c62828; font-weight: 600; }
 
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #999;
+        }
+
         @media (max-width: 600px) {
             header h1 { font-size: 1.4rem; }
             .form-row { grid-template-columns: 1fr; }
@@ -253,6 +365,29 @@
     </style>
 </head>
 <body>
+    <!-- Modal de configuracion Supabase -->
+    <div class="config-overlay hidden" id="configOverlay">
+        <div class="config-modal">
+            <h2>Configurar Supabase</h2>
+            <p>Ingresa las credenciales de tu proyecto Supabase. Las encuentras en Settings &gt; API de tu proyecto.</p>
+            <div class="form-group">
+                <label>Supabase URL</label>
+                <input type="text" id="config-url" placeholder="https://xxxxx.supabase.co">
+            </div>
+            <div class="form-group">
+                <label>Anon Key (public)</label>
+                <input type="text" id="config-key" placeholder="eyJhbGciOiJIUzI1NiIs...">
+            </div>
+            <button class="btn btn-config" onclick="saveConfig()">Conectar</button>
+        </div>
+    </div>
+
+    <!-- Toast de notificacion -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Boton config -->
+    <button class="config-btn" onclick="showConfig()" title="Configurar Supabase">&#9881;</button>
+
     <header>
         <h1>Exalumnos Lacerodoce</h1>
         <p>Control de Aportes y Gastos</p>
@@ -279,7 +414,7 @@
             <button class="tab-btn tab-gastos" onclick="switchTab('gastos')">Gastos</button>
         </div>
 
-        <!-- Sección Aportes -->
+        <!-- Seccion Aportes -->
         <div id="section-aportes" class="section active">
             <div class="form-card">
                 <h2>Registrar Aporte</h2>
@@ -298,7 +433,7 @@
                             <input type="date" id="aporte-fecha" required>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-aporte">Registrar Aporte</button>
+                    <button type="submit" class="btn btn-aporte" id="btnAporte">Registrar Aporte</button>
                 </form>
             </div>
 
@@ -320,7 +455,7 @@
             </div>
         </div>
 
-        <!-- Sección Gastos -->
+        <!-- Seccion Gastos -->
         <div id="section-gastos" class="section">
             <div class="form-card">
                 <h2>Registrar Gasto</h2>
@@ -339,7 +474,7 @@
                         <label for="gasto-descripcion">Descripcion</label>
                         <input type="text" id="gasto-descripcion" required placeholder="Descripcion del gasto">
                     </div>
-                    <button type="submit" class="btn btn-gasto">Registrar Gasto</button>
+                    <button type="submit" class="btn btn-gasto" id="btnGasto">Registrar Gasto</button>
                 </form>
             </div>
 
@@ -363,20 +498,56 @@
     </div>
 
     <script>
-        // Datos almacenados en localStorage
-        function getData() {
-            return {
-                aportes: JSON.parse(localStorage.getItem('lacerodoce_aportes') || '[]'),
-                gastos: JSON.parse(localStorage.getItem('lacerodoce_gastos') || '[]')
-            };
+        let supabase = null;
+
+        // Toast de notificacion
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
         }
 
-        function saveAportes(aportes) {
-            localStorage.setItem('lacerodoce_aportes', JSON.stringify(aportes));
+        // Configuracion de Supabase
+        function getConfig() {
+            const url = localStorage.getItem('supabase_url');
+            const key = localStorage.getItem('supabase_key');
+            return (url && key) ? { url, key } : null;
         }
 
-        function saveGastos(gastos) {
-            localStorage.setItem('lacerodoce_gastos', JSON.stringify(gastos));
+        function showConfig() {
+            const config = getConfig();
+            if (config) {
+                document.getElementById('config-url').value = config.url;
+                document.getElementById('config-key').value = config.key;
+            }
+            document.getElementById('configOverlay').classList.remove('hidden');
+        }
+
+        function saveConfig() {
+            const url = document.getElementById('config-url').value.trim();
+            const key = document.getElementById('config-key').value.trim();
+
+            if (!url || !key) {
+                showToast('Completa ambos campos', 'error');
+                return;
+            }
+
+            localStorage.setItem('supabase_url', url);
+            localStorage.setItem('supabase_key', key);
+            document.getElementById('configOverlay').classList.add('hidden');
+            initSupabase();
+        }
+
+        function initSupabase() {
+            const config = getConfig();
+            if (!config) {
+                showConfig();
+                return;
+            }
+
+            supabase = window.supabase.createClient(config.url, config.key);
+            loadData();
         }
 
         // Formatear moneda
@@ -406,67 +577,117 @@
             document.getElementById('section-' + tab).classList.add('active');
         }
 
+        // Cargar datos desde Supabase
+        async function loadData() {
+            if (!supabase) return;
+
+            try {
+                const [aportesRes, gastosRes] = await Promise.all([
+                    supabase.from('aportes').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }),
+                    supabase.from('gastos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
+                ]);
+
+                if (aportesRes.error) throw aportesRes.error;
+                if (gastosRes.error) throw gastosRes.error;
+
+                render(aportesRes.data, gastosRes.data);
+            } catch (err) {
+                showToast('Error al cargar datos: ' + err.message, 'error');
+            }
+        }
+
         // Agregar aporte
-        function addAporte(e) {
+        async function addAporte(e) {
             e.preventDefault();
-            const data = getData();
-            const aporte = {
-                id: Date.now(),
-                nombre: document.getElementById('aporte-nombre').value.trim(),
-                monto: parseFloat(document.getElementById('aporte-monto').value),
-                fecha: document.getElementById('aporte-fecha').value
-            };
-            data.aportes.push(aporte);
-            saveAportes(data.aportes);
-            document.getElementById('formAporte').reset();
-            setDefaultDates();
-            render();
+            if (!supabase) { showConfig(); return; }
+
+            const btn = document.getElementById('btnAporte');
+            btn.disabled = true;
+
+            try {
+                const { error } = await supabase.from('aportes').insert({
+                    nombre: document.getElementById('aporte-nombre').value.trim(),
+                    monto: parseFloat(document.getElementById('aporte-monto').value),
+                    fecha: document.getElementById('aporte-fecha').value
+                });
+
+                if (error) throw error;
+
+                document.getElementById('formAporte').reset();
+                setDefaultDates();
+                showToast('Aporte registrado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         // Agregar gasto
-        function addGasto(e) {
+        async function addGasto(e) {
             e.preventDefault();
-            const data = getData();
-            const gasto = {
-                id: Date.now(),
-                fecha: document.getElementById('gasto-fecha').value,
-                monto: parseFloat(document.getElementById('gasto-monto').value),
-                descripcion: document.getElementById('gasto-descripcion').value.trim()
-            };
-            data.gastos.push(gasto);
-            saveGastos(data.gastos);
-            document.getElementById('formGasto').reset();
-            setDefaultDates();
-            render();
+            if (!supabase) { showConfig(); return; }
+
+            const btn = document.getElementById('btnGasto');
+            btn.disabled = true;
+
+            try {
+                const { error } = await supabase.from('gastos').insert({
+                    fecha: document.getElementById('gasto-fecha').value,
+                    monto: parseFloat(document.getElementById('gasto-monto').value),
+                    descripcion: document.getElementById('gasto-descripcion').value.trim()
+                });
+
+                if (error) throw error;
+
+                document.getElementById('formGasto').reset();
+                setDefaultDates();
+                showToast('Gasto registrado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         // Eliminar aporte
-        function deleteAporte(id) {
-            const data = getData();
-            data.aportes = data.aportes.filter(a => a.id !== id);
-            saveAportes(data.aportes);
-            render();
+        async function deleteAporte(id) {
+            if (!supabase) return;
+
+            try {
+                const { error } = await supabase.from('aportes').delete().eq('id', id);
+                if (error) throw error;
+                showToast('Aporte eliminado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
         }
 
         // Eliminar gasto
-        function deleteGasto(id) {
-            const data = getData();
-            data.gastos = data.gastos.filter(g => g.id !== id);
-            saveGastos(data.gastos);
-            render();
+        async function deleteGasto(id) {
+            if (!supabase) return;
+
+            try {
+                const { error } = await supabase.from('gastos').delete().eq('id', id);
+                if (error) throw error;
+                showToast('Gasto eliminado', 'success');
+                await loadData();
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
         }
 
-        // Renderizar toda la UI
-        function render() {
-            const data = getData();
-
-            // Ordenar por fecha descendente
-            data.aportes.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id);
-            data.gastos.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id);
+        // Renderizar la UI
+        function render(aportes, gastos) {
+            aportes = aportes || [];
+            gastos = gastos || [];
 
             // Totales
-            const totalAportes = data.aportes.reduce((sum, a) => sum + a.monto, 0);
-            const totalGastos = data.gastos.reduce((sum, g) => sum + g.monto, 0);
+            const totalAportes = aportes.reduce((sum, a) => sum + parseFloat(a.monto), 0);
+            const totalGastos = gastos.reduce((sum, g) => sum + parseFloat(g.monto), 0);
             const saldo = totalAportes - totalGastos;
 
             document.getElementById('totalAportes').textContent = formatMoney(totalAportes);
@@ -476,12 +697,12 @@
             // Tabla aportes
             const tablaAportes = document.getElementById('tablaAportes');
             const emptyAportes = document.getElementById('emptyAportes');
-            if (data.aportes.length === 0) {
+            if (aportes.length === 0) {
                 tablaAportes.innerHTML = '';
                 emptyAportes.style.display = 'block';
             } else {
                 emptyAportes.style.display = 'none';
-                tablaAportes.innerHTML = data.aportes.map(a =>
+                tablaAportes.innerHTML = aportes.map(a =>
                     '<tr>' +
                         '<td>' + formatDate(a.fecha) + '</td>' +
                         '<td>' + escapeHtml(a.nombre) + '</td>' +
@@ -494,12 +715,12 @@
             // Tabla gastos
             const tablaGastos = document.getElementById('tablaGastos');
             const emptyGastos = document.getElementById('emptyGastos');
-            if (data.gastos.length === 0) {
+            if (gastos.length === 0) {
                 tablaGastos.innerHTML = '';
                 emptyGastos.style.display = 'block';
             } else {
                 emptyGastos.style.display = 'none';
-                tablaGastos.innerHTML = data.gastos.map(g =>
+                tablaGastos.innerHTML = gastos.map(g =>
                     '<tr>' +
                         '<td>' + formatDate(g.fecha) + '</td>' +
                         '<td>' + escapeHtml(g.descripcion) + '</td>' +
@@ -519,7 +740,7 @@
 
         // Inicializar
         setDefaultDates();
-        render();
+        initSupabase();
     </script>
 </body>
 </html>
